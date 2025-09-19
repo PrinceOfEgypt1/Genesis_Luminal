@@ -1,15 +1,8 @@
 /**
- * GENESIS LUMINAL BACKEND WITH OPENTELEMETRY
- * Servidor principal com integração Claude API e observabilidade completa
- * 
- * IMPORTANTE: Instrumentação DEVE ser inicializada antes de qualquer import
+ * GENESIS LUMINAL BACKEND WITH OBSERVABILITY
+ * Servidor principal com integração Claude API e observabilidade funcional
  */
 
-// 🔍 INICIALIZAR OPENTELEMETRY PRIMEIRO
-import { initializeInstrumentation } from './telemetry/instrumentation';
-initializeInstrumentation();
-
-// Imports da aplicação (após instrumentação)
 import { sanitizeEmotional } from './middleware/sanitizeEmotional';
 import express from 'express';
 import cors from 'cors';
@@ -20,9 +13,14 @@ import { setupRoutes } from './routes';
 import { healthRouter } from './routes/health';
 import { errorMiddleware } from './middleware/error';
 import { rateLimitMiddleware } from './middleware/rateLimit';
-import { telemetryMiddleware, emotionalAnalysisTelemetry } from './middleware/telemetry';
+import { 
+  observabilityMiddleware, 
+  emotionalAnalysisObservability,
+  healthObservability 
+} from './middleware/observability';
+import { getMetricsRegistry } from './observability/metrics';
+import { getObservabilityStatus } from './observability';
 import { logger } from './utils/logger';
-import { getTelemetryStatus } from './telemetry';
 
 const app = express();
 
@@ -46,8 +44,8 @@ app.use((req, res, next) => {
   next();
 });
 
-// 🔍 TELEMETRIA - Primeiro middleware após timeout
-app.use(telemetryMiddleware);
+// 📊 OBSERVABILIDADE - Primeiro middleware após timeout
+app.use(observabilityMiddleware);
 
 // Security & Performance middleware
 app.use(helmet());
@@ -62,18 +60,25 @@ app.use(express.json({ limit: '1mb' }));
 app.use('/api/emotional/analyze', sanitizeEmotional);
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
-// ✅ CORREÇÃO CRÍTICA: Health routes ANTES do rate limiting
+// Health routes ANTES do rate limiting (com observabilidade reduzida)
+app.use('/api/health', healthObservability);
 app.use('/api', healthRouter);
 
-// Endpoint de métricas Prometheus
-app.get('/metrics', (req, res) => {
-  res.setHeader('Content-Type', 'text/plain');
-  res.send('# Metrics available at Prometheus endpoint\n# Check port 9464');
+// 📊 ENDPOINT DE MÉTRICAS PROMETHEUS
+app.get('/metrics', async (req, res) => {
+  try {
+    res.setHeader('Content-Type', getMetricsRegistry().contentType);
+    const metrics = await getMetricsRegistry().metrics();
+    res.send(metrics);
+  } catch (error) {
+    logger.error('Error generating metrics', error);
+    res.status(500).send('Error generating metrics');
+  }
 });
 
-// Endpoint de status de telemetria
-app.get('/api/telemetry/status', (req, res) => {
-  const status = getTelemetryStatus();
+// 📊 ENDPOINT DE STATUS DE OBSERVABILIDADE  
+app.get('/api/observability/status', (req, res) => {
+  const status = getObservabilityStatus();
   res.json({
     ...status,
     timestamp: new Date().toISOString(),
@@ -82,11 +87,11 @@ app.get('/api/telemetry/status', (req, res) => {
   });
 });
 
-// ✅ Rate limiting aplicado APÓS rotas de saúde
+// Rate limiting aplicado APÓS rotas de saúde
 app.use(rateLimitMiddleware);
 
-// Telemetria específica para análise emocional
-app.use('/api/emotional', emotionalAnalysisTelemetry);
+// Observabilidade específica para análise emocional
+app.use('/api/emotional', emotionalAnalysisObservability);
 
 // Application routes
 app.use('/api', setupRoutes());
@@ -97,16 +102,16 @@ app.use(errorMiddleware);
 // Start server
 const PORT = config.PORT || 3001;
 app.listen(PORT, () => {
-  const telemetryStatus = getTelemetryStatus();
+  const observabilityStatus = getObservabilityStatus();
   
   logger.info(`🚀 Genesis Luminal Backend running on port ${PORT}`);
   logger.info(`🔡 Frontend URL: ${config.FRONTEND_URL}`);
   logger.info(`🧠 Claude API: ${config.CLAUDE_API_KEY ? 'configured' : 'missing'}`);
   
-  // Log telemetry status
-  logger.info('🔍 OpenTelemetry Status:', telemetryStatus);
-  logger.info(`📊 Prometheus metrics: http://localhost:${process.env.PROMETHEUS_PORT || '9464'}/metrics`);
-  logger.info(`📈 Telemetry status: http://localhost:${PORT}/api/telemetry/status`);
+  // Log observability status
+  logger.info('📊 Observability Status:', observabilityStatus);
+  logger.info(`📈 Metrics endpoint: http://localhost:${PORT}/metrics`);
+  logger.info(`📋 Observability status: http://localhost:${PORT}/api/observability/status`);
 });
 
 // Graceful shutdown
