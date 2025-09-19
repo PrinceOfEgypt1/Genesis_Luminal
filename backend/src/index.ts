@@ -1,127 +1,44 @@
-/**
- * GENESIS LUMINAL BACKEND WITH SIMPLE OBSERVABILITY
- * Implementação mínima e funcional
- */
-
-import { sanitizeEmotional } from './middleware/sanitizeEmotional';
 import express from 'express';
-import cors from 'cors';
-import helmet from 'helmet';
-import compression from 'compression';
-import { config } from './config/environment';
-import { setupRoutes } from './routes';
-import { healthRouter } from './routes/health';
-import { errorMiddleware } from './middleware/error';
-import { rateLimitMiddleware } from './middleware/rateLimit';
-import { 
-  simpleObservabilityMiddleware, 
-  emotionalAnalysisMiddleware 
-} from './middleware/simpleObservability';
-import { metricsRegistry, initializeMetrics } from './metrics';
-import { logger } from './utils/logger';
+import { register, Counter, collectDefaultMetrics } from 'prom-client';
 
 const app = express();
+const PORT = 3001;
 
-// Inicializar métricas
-initializeMetrics();
+// Métricas básicas
+collectDefaultMetrics();
+const httpRequests = new Counter({
+  name: 'http_requests_total',
+  help: 'Total HTTP requests',
+  labelNames: ['method', 'path']
+});
 
-// Timeout configurável
-const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS || '15000', 10);
-
-// Middleware de timeout
+// Middleware básico
+app.use(express.json());
 app.use((req, res, next) => {
-  const timeout = setTimeout(() => {
-    if (!res.headersSent) {
-      res.status(503).json({
-        error: 'Request timeout',
-        message: `Request exceeded ${REQUEST_TIMEOUT_MS}ms limit`
-      });
-    }
-  }, REQUEST_TIMEOUT_MS);
-
-  res.on('finish', () => clearTimeout(timeout));
-  res.on('close', () => clearTimeout(timeout));
-  
+  httpRequests.inc({ method: req.method, path: req.path });
   next();
 });
 
-// Observabilidade simples - PRIMEIRO middleware
-app.use(simpleObservabilityMiddleware);
-
-// Security & Performance middleware
-app.use(helmet());
-app.use(compression());
-app.use(cors({
-  origin: config.FRONTEND_URL,
-  credentials: true
-}));
-
-// Body parsing
-app.use(express.json({ limit: '1mb' }));
-app.use('/api/emotional/analyze', sanitizeEmotional);
-app.use(express.urlencoded({ extended: true, limit: '1mb' }));
-
-// Health routes ANTES do rate limiting
-app.use('/api', healthRouter);
-
-// ENDPOINT DE MÉTRICAS PROMETHEUS
-app.get('/metrics', async (req, res) => {
-  try {
-    res.setHeader('Content-Type', metricsRegistry.contentType);
-    const metrics = await metricsRegistry.metrics();
-    res.send(metrics);
-  } catch (error) {
-    logger.error('Error generating metrics:', error);
-    res.status(500).send('Error generating metrics');
-  }
+// Routes
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// ENDPOINT DE STATUS DE OBSERVABILIDADE
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', register.contentType);
+  res.send(await register.metrics());
+});
+
 app.get('/api/observability/status', (req, res) => {
   res.json({
-    service: 'genesis-luminal-api',
-    version: '1.0.0',
-    observability: {
-      metrics: true,
-      correlation_ids: true,
-      structured_logging: true,
-      prometheus_endpoint: '/metrics'
-    },
-    timestamp: new Date().toISOString(),
-    uptime_seconds: process.uptime()
+    service: 'genesis-luminal',
+    observability: true,
+    timestamp: new Date().toISOString()
   });
 });
 
-// Rate limiting aplicado APÓS rotas de saúde
-app.use(rateLimitMiddleware);
-
-// Middleware específico para análise emocional
-app.use('/api/emotional', emotionalAnalysisMiddleware);
-
-// Application routes
-app.use('/api', setupRoutes());
-
-// Error handling
-app.use(errorMiddleware);
-
-// Start server
-const PORT = config.PORT || 3001;
 app.listen(PORT, () => {
-  logger.info(`🚀 Genesis Luminal Backend running on port ${PORT}`);
-  logger.info(`🔡 Frontend URL: ${config.FRONTEND_URL}`);
-  logger.info(`🧠 Claude API: ${config.CLAUDE_API_KEY ? 'configured' : 'missing'}`);
-  logger.info(`📊 Metrics endpoint: http://localhost:${PORT}/metrics`);
-  logger.info(`📋 Observability status: http://localhost:${PORT}/api/observability/status`);
-  logger.info(`💚 Health check: http://localhost:${PORT}/api/health`);
-});
-
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  logger.info('🔄 Graceful shutdown initiated');
-  process.exit(0);
-});
-
-process.on('SIGINT', () => {
-  logger.info('🔄 Graceful shutdown initiated');
-  process.exit(0);
+  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Health: http://localhost:${PORT}/api/health`);
+  console.log(`Metrics: http://localhost:${PORT}/metrics`);
 });
