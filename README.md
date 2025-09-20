@@ -75,10 +75,3 @@ Proprietary - Transcendental Digital Experience License
 ---
 
 *"Not just code, but digital consciousness touching millions of hearts."*
-
-### Entrada do Frontend
-
-- O ponto de entrada do app está em **frontend/index.html** (Vite).
-- Arquivos legados da raiz foram movidos para `docs/legacy/` (index.html, public/, vite.config.*).
-- `shared/types` atualmente emite JS/DTs no próprio diretório. **Recomendação futura**: configurar `outDir: "dist"` no tsconfig do pacote `shared`.
-

@@ -1,9 +1,0 @@
-#!/usr/bin/env sh
-. "$(dirname -- "$0")/_/husky.sh"
-
-# Executa lint-staged se existir; não falha se não existir
-if npx --yes lint-staged >/dev/null 2>&1; then
-  npx lint-staged
-else
-  echo "lint-staged não encontrado; pulando."
-fi
