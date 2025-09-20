@@ -75,3 +75,8 @@ Proprietary - Transcendental Digital Experience License
 ---
 
 *"Not just code, but digital consciousness touching millions of hearts."*
+
+## 2025-09-19
+- Reset do repositório ao estado do commit inicial, mantendo histórico.
+- Tags: v1-inicial, reset-para-v1-2025-09-19.
+- Branch de backup pré-revert: backup-pre-revert.
